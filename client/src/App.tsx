@@ -28,6 +28,7 @@ function AppContent() {
   const [showLoadingScreen, setShowLoadingScreen] = useState(true);
   const [commandOpen, setCommandOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [generatorType, setGeneratorType] = useState<'flashcards' | 'quiz'>('flashcards');
 
   const activeRequestRef = useRef<AbortController | null>(null);
   const { toast } = useToast();
@@ -71,6 +72,7 @@ function AppContent() {
 
     try {
       const data = await generateStudyDeck(notes, type, count, controller.signal);
+      if (activeRequestRef.current !== controller) return;
       const newSession: Session = {
         id: crypto.randomUUID?.() || Math.random().toString(36).substring(2, 15),
         timestamp: Date.now(),
@@ -186,6 +188,8 @@ function AppContent() {
                     <HeroSection />
                     <StudyInput
                       onGenerate={handleGenerate}
+                      type={generatorType}
+                      onTypeChange={setGeneratorType}
                       isLoading={isLoading}
                       error={error}
                       errorCode={errorCode}
@@ -228,7 +232,7 @@ function AppContent() {
 
                     <GlassPanel glow style={{ width: '100%', padding: '36px 32px', display: 'flex', justifyContent: 'center' }}>
                       {currentDeck.type === 'flashcards' ? (
-                        <Flashcards deck={currentDeck} onUpdateDeck={handleUpdateDeck} />
+                        <Flashcards key={activeSessionId ?? currentDeck.title} deck={currentDeck} onUpdateDeck={handleUpdateDeck} />
                       ) : (
                         <Quiz deck={currentDeck} />
                       )}
@@ -247,6 +251,10 @@ function AppContent() {
         open={commandOpen}
         onClose={() => setCommandOpen(false)}
         onNewSession={handleNewSession}
+        onStartGeneration={(type) => {
+          handleNewSession();
+          setGeneratorType(type);
+        }}
         onOpenSettings={() => { setCommandOpen(false); setSettingsOpen(true); }}
       />
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />

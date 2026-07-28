@@ -32,33 +32,44 @@ const getGroqClient = () => {
   return new Groq({ apiKey });
 };
 
-const StudyDeckZod = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('flashcards'),
-    title: z.string().min(1),
-    cards: z.array(z.object({
-      front: z.string().min(1),
-      back: z.string().min(1),
-      hint: z.string().optional(),
-      mastered: z.boolean().optional()
-    }))
-  }),
-  z.object({
-    type: z.literal('quiz'),
-    title: z.string().min(1),
-    questions: z.array(z.object({
-      question: z.string().min(1),
-      options: z.array(z.string().min(1)).min(2).max(4),
-      correctAnswer: z.string().min(1),
-      explanation: z.string().optional()
-    }))
-  })
-]);
+const FlashcardDeckZod = z.object({
+  type: z.literal('flashcards'),
+  title: z.string().trim().min(1),
+  cards: z.array(z.object({
+    front: z.string().trim().min(1),
+    back: z.string().trim().min(1),
+    hint: z.string().optional(),
+    mastered: z.boolean().optional()
+  })).min(1).max(20)
+});
+
+const QuizDeckZod = z.object({
+  type: z.literal('quiz'),
+  title: z.string().trim().min(1),
+  questions: z.array(z.object({
+    question: z.string().trim().min(1),
+    options: z.array(z.string().trim().min(1)).length(4),
+    correctAnswer: z.string().trim().min(1),
+    explanation: z.string().optional()
+  })).min(1).max(20)
+});
+
+const StudyDeckZod = z.union([FlashcardDeckZod, QuizDeckZod]).superRefine((deck, ctx) => {
+  if (deck.type !== 'quiz') return;
+  deck.questions.forEach((question, questionIndex) => {
+    if (new Set(question.options).size !== question.options.length) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['questions', questionIndex, 'options'], message: 'Quiz options must be unique.' });
+    }
+    if (!question.options.includes(question.correctAnswer)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['questions', questionIndex, 'correctAnswer'], message: 'The correct answer must match one of the options.' });
+    }
+  });
+});
 
 const GenerateRequestSchema = z.object({
-  notes: z.string().min(1),
+  notes: z.string().trim().min(1),
   type: z.enum(['flashcards', 'quiz']).default('flashcards'),
-  count: z.number().int().min(1).max(20).default(5)
+  count: z.coerce.number().int().min(1).max(20).default(5)
 });
 
 const RefineRequestSchema = z.object({
@@ -66,7 +77,7 @@ const RefineRequestSchema = z.object({
   instruction: z.string().min(1)
 });
 
-const validateStudyDeck = (payload) => {
+const validateStudyDeck = (payload, expected = {}) => {
   const parseResult = StudyDeckZod.safeParse(payload);
   if (!parseResult.success) {
     const formatted = parseResult.error.format();
@@ -76,7 +87,19 @@ const validateStudyDeck = (payload) => {
     error.code = 'INVALID_SCHEMA';
     throw error;
   }
-  return parseResult.data;
+  const deck = parseResult.data;
+  if (expected.type && deck.type !== expected.type) {
+    const error = new Error('AI response returned the wrong study deck type.');
+    error.code = 'INVALID_SCHEMA';
+    throw error;
+  }
+  const itemCount = deck.type === 'flashcards' ? deck.cards.length : deck.questions.length;
+  if (expected.count && itemCount !== expected.count) {
+    const error = new Error(`AI response contained ${itemCount} items; expected ${expected.count}.`);
+    error.code = 'INVALID_SCHEMA';
+    throw error;
+  }
+  return deck;
 };
 
 function sendErrorResponse(res, error, defaultStatus = 500) {
@@ -235,11 +258,7 @@ function repairQuiz(data, originalPrompt) {
 
 // Route to generate flashcards or quiz
 app.post('/api/generate', async (req, res) => {
-  const parseResult = GenerateRequestSchema.safeParse({
-    notes: req.body.notes,
-    type: req.body.type,
-    count: Number(req.body.count)
-  });
+  const parseResult = GenerateRequestSchema.safeParse(req.body);
 
   if (!parseResult.success) {
     return res.status(400).json({ error: 'Invalid generate request payload.', code: 'INVALID_REQUEST', details: parseResult.error.format() });
@@ -259,6 +278,7 @@ Return your response in structured JSON. Do not include markdown code blocks or 
 
       responseSchemaPrompt = `The JSON object must have this exact structure:
 {
+  "type": "flashcards",
   "title": "A short, engaging title for the flashcards deck",
   "cards": [
     {
@@ -274,12 +294,13 @@ Return your response in structured JSON. Do not include markdown code blocks or 
 
       responseSchemaPrompt = `The JSON object must have this exact structure:
 {
+  "type": "quiz",
   "title": "A short, engaging title for the quiz",
   "questions": [
     {
       "question": "The clear multiple-choice question prompt",
-      "options": ["Option A", "Option B", "Option C", "Option D"], // Must contain exactly 4 unique options
-      "correctAnswer": "Option A", // Must match one of the strings inside options EXACTLY
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correctAnswer": "Option A",
       "explanation": "A helpful explanation of why this answer is correct"
     }
   ]
@@ -307,7 +328,7 @@ ${responseSchemaPrompt}`;
     console.log('Raw Groq JSON response received.');
     
     const parsedData = parseAndCleanJSON(responseText);
-    const validatedData = validateStudyDeck(parsedData);
+    const validatedData = validateStudyDeck(parsedData, { type: requestedType, count: itemCount });
 
     res.json(validatedData);
 
@@ -357,7 +378,7 @@ Output the updated, complete JSON structure containing the modifications. Make s
 
     const responseText = completion.choices[0].message.content;
     const parsedData = parseAndCleanJSON(responseText);
-    const validatedData = validateStudyDeck(parsedData);
+    const validatedData = validateStudyDeck(parsedData, { type });
 
     res.json(validatedData);
 

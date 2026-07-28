@@ -5,6 +5,7 @@ interface CommandPaletteProps {
   open: boolean;
   onClose: () => void;
   onNewSession: () => void;
+  onStartGeneration: (type: 'flashcards' | 'quiz') => void;
   onOpenSettings: () => void;
 }
 
@@ -15,9 +16,11 @@ const commands = [
   { id: 'settings', label: 'Open Settings', icon: Settings, shortcut: ',' },
 ];
 
-export default function CommandPalette({ open, onClose, onNewSession, onOpenSettings }: CommandPaletteProps) {
+export default function CommandPalette({ open, onClose, onNewSession, onStartGeneration, onOpenSettings }: CommandPaletteProps) {
   const handleSelect = (id: string) => {
     if (id === 'new') onNewSession();
+    if (id === 'flashcards') onStartGeneration('flashcards');
+    if (id === 'quiz') onStartGeneration('quiz');
     if (id === 'settings') onOpenSettings();
     onClose();
   };

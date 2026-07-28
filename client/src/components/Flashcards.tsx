@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, RotateCw, CheckCircle, HelpCircle, RefreshCw, Trophy } from 'lucide-react';
 import type { FlashcardDeck } from '../utils/types';
@@ -14,13 +14,40 @@ export default function Flashcards({ deck, onUpdateDeck }: FlashcardsProps) {
   const [isFlipped, setIsFlipped] = useState(false);
 
   const cards = deck.cards;
-  const currentCard = cards[currentIndex];
+  // A refined deck can contain fewer cards before the state-reset effect runs.
+  // Clamp the displayed card during that render so a deck update never dereferences
+  // an out-of-range card.
+  const activeIndex = Math.min(currentIndex, Math.max(0, cards.length - 1));
+  const currentCard = cards[activeIndex];
 
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const handleNext = useCallback(() => {
+    if (currentIndex < cards.length - 1) {
+      setCurrentIndex((prev) => prev + 1);
+      setIsFlipped(false);
+    }
+  }, [cards.length, currentIndex]);
+
+  const handlePrev = useCallback(() => {
+    if (currentIndex > 0) {
+      setCurrentIndex((prev) => prev - 1);
+      setIsFlipped(false);
+    }
+  }, [currentIndex]);
+
+  useEffect(() => {
+    if (currentIndex >= cards.length) {
+      setCurrentIndex(Math.max(0, cards.length - 1));
+      setIsFlipped(false);
+    }
+  }, [cards.length, currentIndex]);
 
   // Set up Keyboard Navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
       if (e.code === 'Space') {
         e.preventDefault();
         setIsFlipped((prev) => !prev);
@@ -33,7 +60,7 @@ export default function Flashcards({ deck, onUpdateDeck }: FlashcardsProps) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentIndex, cards.length]);
+  }, [handleNext, handlePrev]);
 
   // Trigger celebration confetti when all cards are mastered
   useEffect(() => {
@@ -67,20 +94,6 @@ export default function Flashcards({ deck, onUpdateDeck }: FlashcardsProps) {
     }
   }, [cards]);
 
-  const handleNext = () => {
-    if (currentIndex < cards.length - 1) {
-      setCurrentIndex((prev) => prev + 1);
-      setIsFlipped(false);
-    }
-  };
-
-  const handlePrev = () => {
-    if (currentIndex > 0) {
-      setCurrentIndex((prev) => prev - 1);
-      setIsFlipped(false);
-    }
-  };
-
   const handleFlip = () => {
     setIsFlipped((prev) => !prev);
   };
@@ -88,7 +101,7 @@ export default function Flashcards({ deck, onUpdateDeck }: FlashcardsProps) {
   const toggleMastery = (e: React.MouseEvent) => {
     e.stopPropagation(); // Don't flip the card when ticking mastery
     const updatedCards = [...cards];
-    updatedCards[currentIndex] = {
+    updatedCards[activeIndex] = {
       ...currentCard,
       mastered: !currentCard.mastered
     };
@@ -129,7 +142,7 @@ export default function Flashcards({ deck, onUpdateDeck }: FlashcardsProps) {
   };
 
   const masteredCount = cards.filter(c => c.mastered).length;
-  const progressPercent = Math.round(((currentIndex + 1) / cards.length) * 100);
+  const progressPercent = Math.round(((activeIndex + 1) / cards.length) * 100);
   const masteryPercent = Math.round((masteredCount / cards.length) * 100);
   const deckFinished = masteredCount === cards.length;
 
@@ -179,7 +192,7 @@ export default function Flashcards({ deck, onUpdateDeck }: FlashcardsProps) {
         fontFamily: 'var(--font-mono)'
       }}>
         <div>
-          Card <span style={{ color: '#fff', fontWeight: 700 }}>{currentIndex + 1}</span> of {cards.length}
+          Card <span style={{ color: '#fff', fontWeight: 700 }}>{activeIndex + 1}</span> of {cards.length}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -250,7 +263,7 @@ export default function Flashcards({ deck, onUpdateDeck }: FlashcardsProps) {
       <div style={{ perspective: '1500px', width: '100%', maxWidth: '580px', display: 'flex', justifyContent: 'center' }}>
         <AnimatePresence mode="wait">
           <motion.div
-            key={currentIndex}
+            key={activeIndex}
             initial={{ opacity: 0, x: 60, rotateY: 5 }}
             animate={{ opacity: 1, x: 0, rotateY: 0 }}
             exit={{ opacity: 0, x: -60, rotateY: -5 }}
@@ -385,7 +398,7 @@ export default function Flashcards({ deck, onUpdateDeck }: FlashcardsProps) {
         <button
           onClick={handlePrev}
           className="glass-btn glass-btn-secondary"
-          disabled={currentIndex === 0}
+          disabled={activeIndex === 0}
           style={{ flex: 1, height: '44px' }}
         >
           <ChevronLeft size={16} />
@@ -410,7 +423,7 @@ export default function Flashcards({ deck, onUpdateDeck }: FlashcardsProps) {
         <button
           onClick={handleNext}
           className="glass-btn glass-btn-secondary"
-          disabled={currentIndex === cards.length - 1}
+          disabled={activeIndex === cards.length - 1}
           style={{ flex: 1, height: '44px' }}
         >
           <span>Next</span>

@@ -6,6 +6,8 @@ import type { ApiErrorCode } from '../utils/api';
 
 interface StudyInputProps {
   onGenerate: (notes: string, type: 'flashcards' | 'quiz', count: number) => void;
+  type: 'flashcards' | 'quiz';
+  onTypeChange: (type: 'flashcards' | 'quiz') => void;
   isLoading: boolean;
   error: string | null;
   errorCode?: ApiErrorCode | null;
@@ -29,9 +31,8 @@ const SUGGESTED_PLACEHOLDERS = [
   "Summarize the plot, characters, and motifs of Shakespeare's Macbeth..."
 ];
 
-export default function StudyInput({ onGenerate, isLoading, error, errorCode, onClearError }: StudyInputProps) {
+export default function StudyInput({ onGenerate, type, onTypeChange, isLoading, error, errorCode, onClearError }: StudyInputProps) {
   const [notes, setNotes] = useState('');
-  const [type, setType] = useState<'flashcards' | 'quiz'>('flashcards');
   const [count, setCount] = useState(5);
   const [loadingStep, setLoadingStep] = useState(0);
 
@@ -171,7 +172,7 @@ export default function StudyInput({ onGenerate, isLoading, error, errorCode, on
               <button
                 type="button"
                 className={`tab-btn ${type === 'flashcards' ? 'active' : ''}`}
-                onClick={() => setType('flashcards')}
+                onClick={() => onTypeChange('flashcards')}
                 disabled={isLoading}
                 style={{ border: '1px solid var(--border-thin)', height: '46px' }}
               >
@@ -181,7 +182,7 @@ export default function StudyInput({ onGenerate, isLoading, error, errorCode, on
               <button
                 type="button"
                 className={`tab-btn ${type === 'quiz' ? 'active' : ''}`}
-                onClick={() => setType('quiz')}
+                onClick={() => onTypeChange('quiz')}
                 disabled={isLoading}
                 style={{ border: '1px solid var(--border-thin)', height: '46px' }}
               >
