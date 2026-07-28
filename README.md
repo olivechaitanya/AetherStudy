@@ -1,29 +1,35 @@
-# AetherStudy — AI Study Assistant
+# AetherStudy
 
-A modern, responsive React web application that takes free-form text inputs, notes, or study topics, routes them through a secure backend, and uses Gemini AI to build interactive learning tools (3D Flashcards and Stateful Multiple-Choice Quizzes) with live refinement capabilities.
+AetherStudy is an AI-powered study material generator that transforms free-form notes and topics into interactive flashcards and multiple-choice quizzes.
 
 ---
 
 ## Features
 
-- **Double Study Modes**: 
-  - **Flashcards Deck**: Supports 3D rotation flip animations, mastery tracking, visual hint blurring, and global keyboard controls (Arrow keys to navigate, Spacebar to flip).
-  - **Interactive Quiz**: Visual MCQ setup with instant answer feedback (green/red highlights) and comprehensive explanations. Tracks score percentages with circular progress graphics.
-- **Wrong Answer Re-test Loop**: A dedicated study loop that filters the active deck to only questions you missed, letting you re-test until you achieve 100% mastery.
-- **Refinement Input**: Submit follow-up prompts to edit or extend your active study materials (e.g. *"translate to French"*, *"make questions harder"*, *"add 3 advanced concepts"*) without losing your session.
-- **Session History Sidebar**: Automatic `localStorage` persistence that lets you save, reload, and delete past decks, complete with timestamps and material snippets.
-- **Responsive Dark Theme**: A high-fidelity glassmorphic dark design tailored to mobile, tablet, and desktop viewports.
+- Free-form user input for notes, topics, or study prompts
+- AI-generated structured JSON response for flashcards and quizzes
+- Interactive UI with deck selection, refinement, and study controls (not a chatbot)
+- Loading, error, and empty states for better UX
+- Retry mechanism via refinement input and regenerate flows
+- Mobile-responsive design with tablet and desktop layout support
+- Prevention of stale API responses using `AbortController`
+- JSON validation, parsing, and data healing on the backend
+- Session history with localStorage persistence for saved decks
+- 3D flashcard flipping with mastery tracking
+- Stateful quiz flow with score feedback and answer explanations
+- Live refinement panel to update existing decks without losing the session
+- Keyboard shortcuts and command palette for faster navigation
 
 ---
 
-## Technical Architecture & Failure Mitigation
+## Tech Stack
 
-This app was built to handle unpredictable LLM failures robustly:
-1. **JSON Output Guarantee**: Configures Gemini (`gemini-2.5-flash`) using `responseMimeType: "application/json"`.
-2. **Backend Validation & Healing Layer**: If the AI returns malformed shapes (e.g. missing correct options, missing explanation fields, or array format anomalies), `server/index.js` sanitizes and repairs the data structure automatically.
-3. **Race Condition Prevention**: Employs an `AbortController` in React. If a user triggers a generation request while a previous one is still loading, the previous request is immediately cancelled, preventing slow stale responses from overwriting newer ones.
-4. **Hanging/Latency Protection**: Implements a 20-second request timeout. If the LLM api hangs, the client aborts and presents a clean error card with an automated retry action.
-5. **Secure Routing**: Leverages a Node/Express backend to communicate with the Gemini API, ensuring your `GEMINI_API_KEY` is never exposed to the client browser.
+- React (Hooks + Functional Components)
+- Vite for frontend bundling
+- Node.js / Express backend server
+- Groq AI SDK for model integration
+- Custom CSS styling with glassmorphic design
+- Additional libraries: `framer-motion`, `lucide-react`, `canvas-confetti`, `dotenv`, `cors`, `concurrently`, `nodemon`, `oxlint`
 
 ---
 
@@ -31,71 +37,45 @@ This app was built to handle unpredictable LLM failures robustly:
 
 ```
 project flam/
-├── package.json          # Root scripts to coordinate client/server workspaces
+├── package.json          # Root workspace scripts and dev dependency management
 ├── server/               # Express backend server
-│   ├── index.js          # Server routing, validation & API logic
-│   └── .env.example      # Example environment variables
+│   ├── index.js          # API routing, Groq integration, JSON parsing, and repair logic
+│   ├── package.json      # Server dependencies and scripts
+│   └── .env.example      # Environment variable template for Groq API key
 └── client/               # Vite React + TypeScript frontend
-    ├── index.html        # Main HTML and font configs
+    ├── package.json      # Frontend dependencies and scripts
+    ├── tsconfig.json     # TypeScript configuration for the client
+    ├── index.html        # Main HTML entrypoint
     ├── src/
-    │   ├── main.tsx
-    │   ├── App.tsx       # Core page layout, state management, and abort controllers
-    │   ├── index.css     # CSS variables, animations, and glassmorphism styling
-    │   ├── components/   # Subcomponents (Flashcards, Quiz, Input, SessionList, Refinement)
-    │   └── utils/        # Fetch wrappers (with timeouts) and interfaces
+    │   ├── main.tsx      # React app bootstrap
+    │   ├── App.tsx       # Core app state, generation flow, and UI layout
+    │   ├── index.css     # Global styles, responsive layout, and glassmorphism
+    │   ├── components/   # Modular UI components for flashcards, quizzes, sessions, and refinement
+    │   └── utils/        # API client, timeout wrapper, and type definitions
 ```
 
 ---
 
-## Setup & Running Instructions
-
-Ensure you have **Node.js (v18+)** and **npm** installed.
-
-### 1. Configure the API Key
-1. Navigate to the `server` directory.
-2. Duplicate `.env.example` and rename it to `.env`:
-   ```bash
-   cp server/.env.example server/.env
-   ```
-3. Open `server/.env` and replace `your_gemini_api_key_here` with a valid Gemini API key (you can obtain one for free from [Google AI Studio](https://aistudio.google.com/)).
-
-### 2. Install & Start the App
-Run these commands from the **root directory** of the project:
+## Installation
 
 ```bash
-# Install dependencies for both frontend and backend workspaces
+git clone https://github.com/olivechaitanya/AetherStudy.git
+cd AetherStudy
 npm install
+```
 
-# Start both backend and frontend servers concurrently
+After installing dependencies, run the app with:
+
+```bash
 npm start
 ```
 
-- **Frontend client** will launch on: `http://localhost:5173`
-- **Backend API server** will run on: `http://localhost:3001`
+The frontend will be available at `http://localhost:5173` and the backend API at `http://localhost:3001`.
 
 ---
 
-## AI Usage Note
+## Notes
 
-This project was built in pair-programming collaboration with **Antigravity**, an agentic AI coding assistant by Google DeepMind:
-- **Scaffolding & Architecture**: Used to organize the monorepo workspace configurations, root-level package JSONs, and TypeScript files.
-- **Styling Design**: Assisted in tailoring index.css classes for the glassmorphic layouts, pulse animations, and 3D rotation properties.
-- **Robustness Engineering**: Assisted in detailing the data-healing regex filters on the backend and writing the AbortController hooks on the frontend.
-
----
-
-## Known Limitations
-
-- **LocalStorage Volume**: Uses `localStorage` for session persistence. If notes pasted are exceptionally large (multiple megabytes), they may exceed browser storage allocations.
-- **Rate Limits**: Uses standard Gemini public endpoints which are subject to Developer API free tier rate limits (approx. 15 requests/minute).
-
----
-
-## Time Spent
-
-- **Planning & Schema Design**: ~45 minutes
-- **Backend & AI Integration**: ~1 hour 15 minutes
-- **Frontend Components & Stateful Logic**: ~2 hours
-- **UI Styling & Responsiveness Polish**: ~45 minutes
-- **Verification, Compilation & Documentation**: ~30 minutes
-- **Total Spent**: **~5 hours** (well under the 8-hour assignment cap).
+- Create a `server/.env` file from `server/.env.example` and add your valid `GROQ_API_KEY`.
+- The backend proxies AI requests so the API key is never exposed in the browser.
+- The client uses `localStorage` to persist recent study sessions.
