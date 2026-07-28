@@ -2,18 +2,22 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import Groq from 'groq-sdk';
+import { z } from 'zod';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:5173';
 
-// CORS configuration - allow Vite frontend (usually port 5173 or others)
-app.use(cors({
-  origin: '*', // For development simplicity, allow all. In production, restrict to frontend URL.
+const corsOptions = {
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type']
-}));
+  allowedHeaders: ['Content-Type'],
+  origin: NODE_ENV === 'production' ? FRONTEND_ORIGIN : '*'
+};
+
+app.use(cors(corsOptions));
 
 app.use(express.json());
 
@@ -21,10 +25,66 @@ app.use(express.json());
 const getGroqClient = () => {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey || apiKey === 'your_groq_api_key_here') {
-    throw new Error('GROQ_API_KEY is not configured. Please create a server/.env file with a valid API key.');
+    const error = new Error('GROQ_API_KEY is not configured. Please create a server/.env file with a valid API key.');
+    error.code = 'API_KEY_MISSING';
+    throw error;
   }
   return new Groq({ apiKey });
 };
+
+const StudyDeckZod = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('flashcards'),
+    title: z.string().min(1),
+    cards: z.array(z.object({
+      front: z.string().min(1),
+      back: z.string().min(1),
+      hint: z.string().optional(),
+      mastered: z.boolean().optional()
+    }))
+  }),
+  z.object({
+    type: z.literal('quiz'),
+    title: z.string().min(1),
+    questions: z.array(z.object({
+      question: z.string().min(1),
+      options: z.array(z.string().min(1)).min(2).max(4),
+      correctAnswer: z.string().min(1),
+      explanation: z.string().optional()
+    }))
+  })
+]);
+
+const GenerateRequestSchema = z.object({
+  notes: z.string().min(1),
+  type: z.enum(['flashcards', 'quiz']).default('flashcards'),
+  count: z.number().int().min(1).max(20).default(5)
+});
+
+const RefineRequestSchema = z.object({
+  currentData: StudyDeckZod,
+  instruction: z.string().min(1)
+});
+
+const validateStudyDeck = (payload) => {
+  const parseResult = StudyDeckZod.safeParse(payload);
+  if (!parseResult.success) {
+    const formatted = parseResult.error.format();
+    const message = 'AI response validation failed.';
+    const error = new Error(message);
+    error.details = formatted;
+    error.code = 'INVALID_SCHEMA';
+    throw error;
+  }
+  return parseResult.data;
+};
+
+function sendErrorResponse(res, error, defaultStatus = 500) {
+  const code = error?.code || 'UNKNOWN_ERROR';
+  const status = code === 'INVALID_SCHEMA' || code === 'INVALID_JSON' ? 422 : defaultStatus;
+  const message = error?.message || 'An unexpected server error occurred.';
+  res.status(status).json({ error: message, code, details: error?.details });
+}
 
 // Robust JSON parser helper
 function parseAndCleanJSON(rawText) {
@@ -44,10 +104,12 @@ function parseAndCleanJSON(rawText) {
       return JSON.parse(jsonMatch[0]);
     }
   } catch (e) {
-    console.error("Regex JSON extraction failed.", e);
+    console.error('Regex JSON extraction failed.', e);
   }
 
-  throw new Error("Could not parse AI output as JSON.");
+  const error = new Error('Could not parse AI output as JSON.');
+  error.code = 'INVALID_JSON';
+  throw error;
 }
 
 // Data healing for Flashcards
@@ -173,14 +235,17 @@ function repairQuiz(data, originalPrompt) {
 
 // Route to generate flashcards or quiz
 app.post('/api/generate', async (req, res) => {
-  const { notes, type, count } = req.body;
+  const parseResult = GenerateRequestSchema.safeParse({
+    notes: req.body.notes,
+    type: req.body.type,
+    count: Number(req.body.count)
+  });
 
-  if (!notes || !notes.trim()) {
-    return res.status(400).json({ error: 'Please provide some notes or a topic to study.' });
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Invalid generate request payload.', code: 'INVALID_REQUEST', details: parseResult.error.format() });
   }
 
-  const requestedType = type || 'flashcards'; // 'flashcards' or 'quiz'
-  const itemCount = parseInt(count, 10) || 5;
+  const { notes, type: requestedType, count: itemCount } = parseResult.data;
 
   try {
     const groq = getGroqClient();
@@ -239,36 +304,28 @@ ${responseSchemaPrompt}`;
     });
 
     const responseText = completion.choices[0].message.content;
-    console.log("Raw Groq JSON response received.");
+    console.log('Raw Groq JSON response received.');
     
     const parsedData = parseAndCleanJSON(responseText);
+    const validatedData = validateStudyDeck(parsedData);
 
-    // Validate and heal data
-    let finalizedData;
-    if (requestedType === 'flashcards') {
-      finalizedData = repairFlashcards(parsedData, notes);
-    } else {
-      finalizedData = repairQuiz(parsedData, notes);
-    }
-
-    res.json(finalizedData);
+    res.json(validatedData);
 
   } catch (error) {
     console.error('Error generating content:', error);
-    res.status(500).json({ 
-      error: error.message || 'An unexpected error occurred while communicating with Groq. Please verify your API key.' 
-    });
+    sendErrorResponse(res, error, 500);
   }
 });
 
 // Route to refine the generated cards/quiz (refinement loop)
 app.post('/api/refine', async (req, res) => {
-  const { currentData, instruction } = req.body;
+  const parseResult = RefineRequestSchema.safeParse(req.body);
 
-  if (!currentData || !instruction || !instruction.trim()) {
-    return res.status(400).json({ error: 'Missing current data or refinement instruction.' });
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Invalid refine request payload.', code: 'INVALID_REQUEST', details: parseResult.error.format() });
   }
 
+  const { currentData, instruction } = parseResult.data;
   const type = currentData.type; // 'flashcards' or 'quiz'
 
   try {
@@ -300,21 +357,13 @@ Output the updated, complete JSON structure containing the modifications. Make s
 
     const responseText = completion.choices[0].message.content;
     const parsedData = parseAndCleanJSON(responseText);
+    const validatedData = validateStudyDeck(parsedData);
 
-    let finalizedData;
-    if (type === 'flashcards') {
-      finalizedData = repairFlashcards(parsedData, currentData.title);
-    } else {
-      finalizedData = repairQuiz(parsedData, currentData.title);
-    }
-
-    res.json(finalizedData);
+    res.json(validatedData);
 
   } catch (error) {
     console.error('Error refining content:', error);
-    res.status(500).json({ 
-      error: error.message || 'Failed to apply refinement instructions. Please check your API configuration.' 
-    });
+    sendErrorResponse(res, error, 500);
   }
 });
 

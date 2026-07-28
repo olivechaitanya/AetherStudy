@@ -77,5 +77,6 @@ The frontend will be available at `http://localhost:5173` and the backend API at
 ## Notes
 
 - Create a `server/.env` file from `server/.env.example` and add your valid `GROQ_API_KEY`.
+- If you want to override the API endpoint, create `client/.env` from `client/.env.example` and set `VITE_API_URL`.
 - The backend proxies AI requests so the API key is never exposed in the browser.
 - The client uses `localStorage` to persist recent study sessions.

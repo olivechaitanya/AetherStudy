@@ -13,7 +13,7 @@ import CommandPalette from './components/ui/CommandPalette';
 import SettingsModal from './components/ui/SettingsModal';
 import { ToastProvider, useToast } from './components/ui/Toast';
 import type { StudyDeck, Session } from './utils/types';
-import { generateStudyDeck } from './utils/api';
+import { generateStudyDeck, type ApiErrorCode } from './utils/api';
 import { ArrowLeft, Layers, CheckSquare } from 'lucide-react';
 import Button from './components/ui/Button';
 import GlassPanel from './components/ui/GlassPanel';
@@ -24,6 +24,7 @@ function AppContent() {
   const [currentDeck, setCurrentDeck] = useState<StudyDeck | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<ApiErrorCode | null>(null);
   const [showLoadingScreen, setShowLoadingScreen] = useState(true);
   const [commandOpen, setCommandOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -66,6 +67,7 @@ function AppContent() {
 
     setIsLoading(true);
     setError(null);
+    setErrorCode(null);
 
     try {
       const data = await generateStudyDeck(notes, type, count, controller.signal);
@@ -82,8 +84,9 @@ function AppContent() {
       setActiveSessionId(newSession.id);
       toast(`${type === 'flashcards' ? 'Flashcards' : 'Quiz'} generated successfully!`, 'success');
     } catch (err: any) {
-      if (err.name === 'AbortError') return;
+      if (err.name === 'AbortError' || err.code === 'ABORT') return;
       setError(err.message || 'Generation failed.');
+      setErrorCode(err.code ?? null);
       toast(err.message || 'Generation failed.', 'error');
     } finally {
       if (activeRequestRef.current === controller) {
@@ -123,6 +126,7 @@ function AppContent() {
     setActiveSessionId(session.id);
     setCurrentDeck(session.data);
     setError(null);
+    setErrorCode(null);
   };
 
   const handleDeleteSession = (id: string) => {
@@ -138,6 +142,7 @@ function AppContent() {
     setActiveSessionId(null);
     setCurrentDeck(null);
     setError(null);
+    setErrorCode(null);
   };
 
   return (
@@ -183,7 +188,11 @@ function AppContent() {
                       onGenerate={handleGenerate}
                       isLoading={isLoading}
                       error={error}
-                      onClearError={() => setError(null)}
+                      errorCode={errorCode}
+                      onClearError={() => {
+                        setError(null);
+                        setErrorCode(null);
+                      }}
                     />
                   </motion.div>
                 ) : (

@@ -2,10 +2,13 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, AlertCircle, RefreshCw, Layers, CheckSquare } from 'lucide-react';
 
+import type { ApiErrorCode } from '../utils/api';
+
 interface StudyInputProps {
   onGenerate: (notes: string, type: 'flashcards' | 'quiz', count: number) => void;
   isLoading: boolean;
   error: string | null;
+  errorCode?: ApiErrorCode | null;
   onClearError: () => void;
 }
 
@@ -26,7 +29,7 @@ const SUGGESTED_PLACEHOLDERS = [
   "Summarize the plot, characters, and motifs of Shakespeare's Macbeth..."
 ];
 
-export default function StudyInput({ onGenerate, isLoading, error, onClearError }: StudyInputProps) {
+export default function StudyInput({ onGenerate, isLoading, error, errorCode, onClearError }: StudyInputProps) {
   const [notes, setNotes] = useState('');
   const [type, setType] = useState<'flashcards' | 'quiz'>('flashcards');
   const [count, setCount] = useState(5);
@@ -247,12 +250,24 @@ export default function StudyInput({ onGenerate, isLoading, error, onClearError 
                 <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                   {error}
                 </p>
+                {errorCode && (
+                  <p style={{ fontSize: '0.82rem', color: 'rgba(255,255,255,0.72)', marginTop: '10px', lineHeight: 1.5 }}>
+                    {errorCode === 'INVALID_REQUEST' && 'Please update your note prompt and try again.'}
+                    {errorCode === 'INVALID_SCHEMA' && 'AI output did not match the expected format; try a slightly different topic.'}
+                    {errorCode === 'INVALID_JSON' && 'The AI response was malformed. Retry the generation or try a shorter prompt.'}
+                    {errorCode === 'RATE_LIMIT' && 'Rate limits are active. Please wait a moment and retry.'}
+                    {errorCode === 'BACKEND_UNAVAILABLE' && 'The API appears unavailable. Check your backend and try again.'}
+                    {errorCode === 'NETWORK_ERROR' && 'Network connectivity failed. Check your internet connection.'}
+                    {errorCode === 'TIMEOUT' && 'The request timed out. Try again with a smaller deck size.'}
+                  </p>
+                )}
                 <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
                   <button
                     type="button"
                     onClick={() => onGenerate(notes, type, count)}
                     className="glass-btn"
                     style={{ padding: '6px 14px', fontSize: '0.8rem', background: 'rgba(255, 46, 147, 0.12)', borderColor: 'rgba(255, 46, 147, 0.25)', color: '#fff' }}
+                    disabled={isLoading || !notes.trim()}
                   >
                     <RefreshCw size={12} style={{ marginRight: '6px' }} /> Retry Request
                   </button>
